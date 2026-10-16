@@ -34,8 +34,9 @@
 #include<dlfcn.h>
 
 unsigned char *shared_code;
-
 struct user_regs_struct regs;
+
+static int monitor(char *, struct user_regs_struct *, pid_t);
 
 void sigint_handler(int sig) {
     __asm__ volatile("int3");
@@ -45,12 +46,10 @@ int main() {
 	ptrace(PTRACE_ATTACH, 9049);
 	shared_code = mmap(NULL, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
-	if(shared_code == MAP_FAILED) {
+	if(shared_code==MAP_FAILED) {
 		perror("mmap failed");
 		return 1;
     }
-
-	printf("address of stdout : %p\n", (void*)stdout);
 
 	struct user_regs_struct regs;
 	unsigned ind=0;
@@ -80,36 +79,16 @@ int main() {
 			if (WIFSTOPPED(status)) {
 				int sig = WSTOPSIG(status);
 
-				if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) == 0) {
-					printf("\033[90mRAX: %llx\n", regs.rax);
-					printf("RBX: %llx\n", regs.rbx);
-					printf("RIP: %llx\n", regs.rip);
-				}
-				printf("(signal=%d)\n\n", sig);
-				printf("\033[0m");
 L1:
-				printf("%p: ", (shared_code+ind));
+				printf("%2d %p: ", sig, (shared_code+ind));
 
 			    fgets(input, sizeof(input), stdin);
     			input[strcspn(input, "\n")] = '\0';
 
 				token=strtok(input, " ");
 				while (token!=NULL) {
-					if(strcmp(token, ".fnc")==0) {
-						token=strtok(NULL, " ");
-						if(token!=NULL) printf("address of %s: %p", token, (void*)dlsym(RTLD_DEFAULT, token));
-						else printf("SYNTEX ERROR: '.fnc <fnc>'");
-						puts("\n");
-						goto L1;
-					} else if(strcmp(token, ".adr")==0) {
-                        token=strtok(NULL, " ");
-                        if(strcmp(token, "stdout")==0) printf("address of stdout: %p", (void*)stdout);
-                        else if(strcmp(token, "stdin")==0) printf("address of stdin: %p", (void*)stdin);
-                        else if(strcmp(token, "stderr")==0) printf("address of stderr: %p", (void*)stderr);
+                    if(monitor(token, &regs, pid)) goto L1;
 
-						puts("\n");
-                        goto L1;
-                    }
 					unsigned int value;
 					sscanf(token, "%x", &value);
 					
@@ -125,4 +104,69 @@ L1:
 			}
 		}
 	}
+}
+
+void monitor_reg(char *, struct user_regs_struct *, pid_t);
+
+static int monitor(char *token, struct user_regs_struct *regs, pid_t pid) {
+    if(strcmp(token, ".fnc")==0) {
+        token=strtok(NULL, " ");
+        if(token!=NULL) printf("address of %s: %p", token, (void*)dlsym(RTLD_DEFAULT, token));
+        else printf("SYNTEX ERROR: '.fnc <fnc name>'");
+        puts("\n");
+        return 1;
+    } else if(strcmp(token, ".adr")==0) {
+        token=strtok(NULL, " ");
+        if(strcmp(token, "stdout")==0) printf("address of stdout: %p", (void*)stdout);
+        else if(strcmp(token, "stdin")==0) printf("address of stdin: %p", (void*)stdin);
+        else if(strcmp(token, "stderr")==0) printf("address of stderr: %p", (void*)stderr);
+        else printf(".adr <stdin/stdout/stderr>");
+        puts("\n");
+        return 1;
+    } else if(strcmp(token, ".reg")==0) {
+        token=strtok(NULL, " ");
+        monitor_reg(token, regs, pid);
+        return 1;
+    }
+    return 0;
+}
+
+void monitor_reg(char *token, struct user_regs_struct *regs, pid_t pid) {
+    if (ptrace(PTRACE_GETREGS, pid, NULL, regs)==0) {
+    #if defined(__linux__) && defined(__x86_64__)
+        if      (strcmp(token, "rax")==0)      printf("RAX: %llx", (unsigned long long)regs->rax);
+        else if (strcmp(token, "rbx")==0)      printf("RBX: %llx", (unsigned long long)regs->rbx);
+        else if (strcmp(token, "rcx")==0)      printf("RCX: %llx", (unsigned long long)regs->rcx);
+        else if (strcmp(token, "rdx")==0)      printf("RDX: %llx", (unsigned long long)regs->rdx);
+        else if (strcmp(token, "rsi")==0)      printf("RSI: %llx", (unsigned long long)regs->rsi);
+        else if (strcmp(token, "rdi")==0)      printf("RDI: %llx", (unsigned long long)regs->rdi);
+        else if (strcmp(token, "rbp")==0)      printf("RBP: %llx", (unsigned long long)regs->rbp);
+        else if (strcmp(token, "rsp")==0)      printf("RSP: %llx", (unsigned long long)regs->rsp);
+        else if (strcmp(token, "r8")==0)       printf("R8: %llx",  (unsigned long long)regs->r8);
+        else if (strcmp(token, "r9")==0)       printf("R9: %llx",  (unsigned long long)regs->r9);
+        else if (strcmp(token, "r10")==0)      printf("R10: %llx", (unsigned long long)regs->r10);
+        else if (strcmp(token, "r11")==0)      printf("R11: %llx", (unsigned long long)regs->r11);
+        else if (strcmp(token, "r12")==0)      printf("R12: %llx", (unsigned long long)regs->r12);
+        else if (strcmp(token, "r13")==0)      printf("R13: %llx", (unsigned long long)regs->r13);
+        else if (strcmp(token, "r14")==0)      printf("R14: %llx", (unsigned long long)regs->r14);
+        else if (strcmp(token, "r15")==0)      printf("R15: %llx", (unsigned long long)regs->r15);
+        else if (strcmp(token, "rip")==0)      printf("RIP: %llx", (unsigned long long)regs->rip);
+        else if (strcmp(token, "eflags")==0)   printf("EFLAGS: %llx", (unsigned long long)regs->eflags);
+        else if (strcmp(token, "cs")==0)       printf("CS: %llx",  (unsigned long long)regs->cs);
+        else if (strcmp(token, "ss")==0)       printf("SS: %llx",  (unsigned long long)regs->ss);
+        else if (strcmp(token, "ds")==0)       printf("DS: %llx",  (unsigned long long)regs->ds);
+        else if (strcmp(token, "es")==0)       printf("ES: %llx",  (unsigned long long)regs->es);
+        else if (strcmp(token, "fs")==0)       printf("FS: %llx",  (unsigned long long)regs->fs);
+        else if (strcmp(token, "gs")==0)       printf("GS: %llx",  (unsigned long long)regs->gs);
+        else if (strcmp(token, "fs_base")==0)  printf("FS_BASE: %llx",  (unsigned long long)regs->fs_base);
+        else if (strcmp(token, "gs_base")==0)  printf("GS_BASE: %llx",  (unsigned long long)regs->gs_base);
+        else if (strcmp(token, "orig_rax")==0) printf("ORIG_RAX: %llx", (unsigned long long)regs->orig_rax);
+    #else
+    #error "Register inspection is not implemented for this platform"
+    #endif
+
+        else printf(".reg <register name>");
+        puts("\n");
+        return;
+    }
 }
