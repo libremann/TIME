@@ -39,7 +39,7 @@ struct user_regs_struct regs;
 static int monitor(char *, struct user_regs_struct *, pid_t);
 
 void sigint_handler(int sig) {
-    __asm__ volatile("int3");
+    raise(SIGTRAP);
 }
 
 int main() {
