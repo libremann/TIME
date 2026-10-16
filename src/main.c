@@ -161,12 +161,14 @@ void monitor_reg(char *token, struct user_regs_struct *regs, pid_t pid) {
         else if (strcmp(token, "fs_base")==0)  printf("FS_BASE: %llx",  (unsigned long long)regs->fs_base);
         else if (strcmp(token, "gs_base")==0)  printf("GS_BASE: %llx",  (unsigned long long)regs->gs_base);
         else if (strcmp(token, "orig_rax")==0) printf("ORIG_RAX: %llx", (unsigned long long)regs->orig_rax);
-    #else
-    #error "Register inspection is not implemented for this platform"
-    #endif
-
         else printf(".reg <register name>");
         puts("\n");
+
+    #else
+    #warning "Register inspection is not implemented for this platform"
+        puts("Register inspection doesn't supprot on your platform\n");
+    #endif
+
         return;
     }
 }
